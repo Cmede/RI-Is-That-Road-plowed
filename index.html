@@ -36,6 +36,7 @@
         .btn-red { background: #ef4444; }
         .btn-gray { background: #64748b; }
         .btn-location { background: #3b82f6; margin-top: 10px; }
+        .btn-share { background: #8b5cf6; margin-top: 5px; } /* Purple Share Button */
         
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
         .road-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
@@ -56,6 +57,7 @@
         <div><span class="dot" style="background:#334155"></span>Unknown</div>
     </div>
     <button class="action-btn btn-location" onclick="findMe()">📍 Find My Street</button>
+    <button class="action-btn btn-share" onclick="shareSite()">🔗 Share This Map</button>
 </div>
 
 <div id="status-modal">
@@ -86,7 +88,7 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app); // Standard init to ensure fresh data on refresh
+    const db = getFirestore(app);
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
     let roadLayers = {}; 
@@ -102,6 +104,25 @@
     map.on('locationfound', (e) => {
         L.circle(e.latlng, { radius: e.accuracy / 2, color: '#3b82f6' }).addTo(map);
     });
+
+    // Share logic
+    window.shareSite = async () => {
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'RI Plow Watch',
+                    text: 'Check out the live snow plow status for Rhode Island roads!',
+                    url: window.location.href
+                });
+            } catch (err) {
+                console.log('Share cancelled or failed');
+            }
+        } else {
+            // Fallback for browsers that don't support Web Share API
+            navigator.clipboard.writeText(window.location.href);
+            alert("Link copied to clipboard!");
+        }
+    };
 
     fetch('./ri-roads.json')
         .then(res => res.json())
@@ -132,7 +153,6 @@
 
             debug.innerText = "Status: Syncing...";
             
-            // Standard real-time listener
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
