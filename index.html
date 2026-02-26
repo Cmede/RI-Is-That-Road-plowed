@@ -16,16 +16,21 @@
             padding: 15px; color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); width: 220px;
         }
 
+        /* Generic Modal Style */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); z-index: 3000; backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1e293b; padding: 25px; border-radius: 20px;
+            border: 1px solid #334155; color: white; width: 300px; text-align: center;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+
         .credit { font-size: 10px; color: #94a3b8; margin-top: 4px; opacity: 0.8; }
         .instruction { font-size: 11px; color: #60a5fa; margin: 8px 0; font-style: italic; font-weight: bold; }
-
-        #status-modal {
-            display: none; position: fixed; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%); z-index: 2000;
-            background: #1e293b; padding: 20px; border-radius: 20px;
-            border: 1px solid #334155; color: white; width: 260px; text-align: center;
-            box-shadow: 0 0 40px rgba(0,0,0,0.7);
-        }
 
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
@@ -36,13 +41,28 @@
         .btn-red { background: #ef4444; }
         .btn-gray { background: #64748b; }
         .btn-location { background: #3b82f6; margin-top: 10px; }
-        .btn-share { background: #8b5cf6; margin-top: 5px; } /* Purple Share Button */
+        .btn-share { background: #8b5cf6; margin-top: 5px; } 
         
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
         .road-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+        
+        ul.guide-list { text-align: left; font-size: 13px; line-height: 1.6; color: #cbd5e1; padding-left: 20px; }
     </style>
 </head>
 <body>
+
+<div id="welcome-modal" class="modal-overlay" style="display: block;">
+    <div class="modal-content">
+        <h2 style="margin-top: 0; color: #60a5fa;">❄️ RI Plow Watch</h2>
+        <p style="font-size: 14px; color: #94a3b8;">Help your neighbors navigate the storm!</p>
+        <ul class="guide-list">
+            <li><b>Find:</b> Use the blue button to locate your street.</li>
+            <li><b>Report:</b> Tap any road to mark it as plowed or snowy.</li>
+            <li><b>Update:</b> If a road gets cleared later, please come back and update the status!</li>
+        </ul>
+        <button class="action-btn btn-green" onclick="closeWelcome()">Got it, let's go!</button>
+    </div>
+</div>
 
 <div class="glass-panel">
     <h3 style="margin:0; color: #60a5fa;">RI Plow Watch</h3>
@@ -60,14 +80,16 @@
     <button class="action-btn btn-share" onclick="shareSite()">🔗 Share This Map</button>
 </div>
 
-<div id="status-modal">
-    <div class="road-label">Updating:</div>
-    <h3 id="modal-road-name" style="margin: 5px 0 15px 0; color: #60a5fa;">Road</h3>
-    <button class="action-btn btn-green" onclick="updateStatus('plowed')">Plowed (City)</button>
-    <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
-    <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
-    <button class="action-btn btn-gray" onclick="updateStatus('unknown')">Reset to Unknown</button>
-    <button onclick="closeModal()" style="background:none; border:none; color:#94a3b8; cursor:pointer; margin-top:10px;">Cancel</button>
+<div id="status-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="road-label">Updating:</div>
+        <h3 id="modal-road-name" style="margin: 5px 0 15px 0; color: #60a5fa;">Road</h3>
+        <button class="action-btn btn-green" onclick="updateStatus('plowed')">Plowed (City)</button>
+        <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
+        <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
+        <button class="action-btn btn-gray" onclick="updateStatus('unknown')">Reset to Unknown</button>
+        <button onclick="closeStatusModal()" style="background:none; border:none; color:#94a3b8; cursor:pointer; margin-top:10px;">Cancel</button>
+    </div>
 </div>
 
 <div id="map"></div>
@@ -77,6 +99,7 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWDc6CnSnDUkUFROTbWP196RJ5i1ZNqmw",
@@ -84,11 +107,13 @@
         projectId: "ri-snow-mpa",
         storageBucket: "ri-snow-mpa.firebasestorage.app",
         messagingSenderId: "372597950937",
-        appId: "1:372597950937:web:52b0651133e2e7256571c8"
+        appId: "1:372597950937:web:52b0651133e2e7256571c8",
+        measurementId: "G-XXXXXXXXXX" // REPLACE WITH YOUR ID
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const analytics = getAnalytics(app);
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
     let roadLayers = {}; 
@@ -100,25 +125,32 @@
 
     map.whenReady(() => { setTimeout(() => { map.invalidateSize(); }, 300); });
 
-    window.findMe = () => map.locate({setView: true, maxZoom: 16});
+    // Welcome Control
+    window.closeWelcome = () => {
+        document.getElementById('welcome-modal').style.display = 'none';
+        logEvent(analytics, 'welcome_closed');
+    };
+
+    window.findMe = () => {
+        map.locate({setView: true, maxZoom: 16});
+        logEvent(analytics, 'find_me_clicked');
+    };
+
     map.on('locationfound', (e) => {
         L.circle(e.latlng, { radius: e.accuracy / 2, color: '#3b82f6' }).addTo(map);
     });
 
-    // Share logic
     window.shareSite = async () => {
+        logEvent(analytics, 'share_clicked');
         if (navigator.share) {
             try {
                 await navigator.share({
                     title: 'RI Plow Watch',
-                    text: 'Check out the live snow plow status for Rhode Island roads!',
+                    text: 'Help track snow plow progress in RI!',
                     url: window.location.href
                 });
-            } catch (err) {
-                console.log('Share cancelled or failed');
-            }
+            } catch (err) {}
         } else {
-            // Fallback for browsers that don't support Web Share API
             navigator.clipboard.writeText(window.location.href);
             alert("Link copied to clipboard!");
         }
@@ -128,18 +160,12 @@
         .then(res => res.json())
         .then(data => {
             L.geoJSON(data, {
-                style: (feature) => ({
-                    color: "transparent", 
-                    weight: 25, 
-                    opacity: 0
-                }),
+                style: () => ({ color: "transparent", weight: 25, opacity: 0 }),
                 onEachFeature: (feature, layer) => {
                     const roadId = String(feature.properties.OBJECTID);
-                    
                     const visibleLine = L.geoJSON(feature, {
                         style: { color: "#334155", weight: 2.5, opacity: 0.5 }
                     }).addTo(map);
-
                     roadLayers[roadId] = visibleLine;
 
                     layer.on('click', (e) => {
@@ -147,28 +173,22 @@
                         activeRoadId = roadId;
                         document.getElementById('modal-road-name').innerText = feature.properties.St_Full || "Rhode Island Road";
                         document.getElementById('status-modal').style.display = 'block';
+                        logEvent(analytics, 'road_clicked', { road: feature.properties.St_Full });
                     });
                 }
             }).addTo(map);
 
-            debug.innerText = "Status: Syncing...";
-            
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
                     const layerGroup = roadLayers[roadId];
-                    
                     if (layerGroup) {
                         const layer = Object.values(layerGroup._layers)[0];
-                        
                         if (change.type === "removed") {
                             layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
                         } else {
                             const status = change.doc.data().status;
-                            let color = '#334155';
-                            if (status === 'plowed') color = '#10b981';
-                            else if (status === 'community') color = '#f59e0b';
-                            else if (status === 'not_plowed') color = '#ef4444';
+                            let color = status === 'plowed' ? '#10b981' : (status === 'community' ? '#f59e0b' : '#ef4444');
                             layer.setStyle({ color: color, weight: 6, opacity: 1 });
                         }
                     }
@@ -182,16 +202,14 @@
         if (!activeRoadId) return;
         const roadRef = doc(db, "roads", activeRoadId);
         try {
-            if (status === 'unknown') {
-                await deleteDoc(roadRef);
-            } else {
-                await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
-            }
-        } catch (e) { console.error("Update failed:", e); }
-        closeModal();
+            if (status === 'unknown') await deleteDoc(roadRef);
+            else await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
+            logEvent(analytics, 'status_update', { type: status });
+        } catch (e) {}
+        closeStatusModal();
     };
 
-    window.closeModal = () => {
+    window.closeStatusModal = () => {
         document.getElementById('status-modal').style.display = 'none';
         activeRoadId = null;
     };
