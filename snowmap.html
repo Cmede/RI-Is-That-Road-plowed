@@ -45,7 +45,7 @@
     <div id="debug-text" style="font-size: 11px; color: #fbbf24; margin: 8px 0;">Status: Connecting...</div>
     <div style="font-size: 13px; line-height: 1.6;">
         <div><span class="dot" style="background:#10b981"></span>Plowed</div>
-        <div><span class="dot" style="background:#f59e0b"></span>Community</div>
+        <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
         <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
         <div><span class="dot" style="background:#334155"></span>Unknown</div>
     </div>
@@ -83,9 +83,8 @@
     const db = getFirestore(app);
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
-    let roadLayers = {}; // Store layer references for instant lookup
+    let roadLayers = {}; 
 
-    // Map Init
     const map = L.map('map', { zoomControl: false }).setView([41.82, -71.41], 12);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19, attribution: '&copy; CartoDB'
@@ -98,16 +97,27 @@
         L.circle(e.latlng, { radius: e.accuracy / 2, color: '#3b82f6' }).addTo(map);
     });
 
-    // Load Roads and setup UI
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
+            // WE ADD TWO LAYERS: A thick invisible one for clicking, and the visible one
             L.geoJSON(data, {
-                style: { color: "#334155", weight: 2.5, opacity: 0.5 },
+                style: (feature) => ({
+                    color: "transparent", 
+                    weight: 25, // HUGE click area
+                    opacity: 0
+                }),
                 onEachFeature: (feature, layer) => {
                     const roadId = String(feature.properties.OBJECTID);
-                    roadLayers[roadId] = layer; // Map road ID to the visual layer
+                    
+                    // Create the VISIBLE line as a sub-layer
+                    const visibleLine = L.geoJSON(feature, {
+                        style: { color: "#334155", weight: 2.5, opacity: 0.5 }
+                    }).addTo(map);
 
+                    roadLayers[roadId] = visibleLine;
+
+                    // Click event on the INVISIBLE thick line
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
                         activeRoadId = roadId;
@@ -117,19 +127,22 @@
                 }
             }).addTo(map);
 
-            // SYNC FIX: Listen to the WHOLE collection at once
             debug.innerText = "Status: Syncing...";
+            
+            // This is the core sync logic. 
+            // collection(db, "roads") monitors the entire database for any changes.
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
-                    const layer = roadLayers[roadId];
+                    const layerGroup = roadLayers[roadId];
                     
-                    if (layer) {
+                    if (layerGroup) {
+                        // GeoJSON groups store the actual line in _layers
+                        const layer = Object.values(layerGroup._layers)[0];
+                        
                         if (change.type === "removed") {
-                            // Reset to default if someone marks as "Unknown"
                             layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
                         } else {
-                            // Apply the plowed status colors
                             const status = change.doc.data().status;
                             let color = '#334155';
                             if (status === 'plowed') color = '#10b981';
@@ -141,13 +154,8 @@
                 });
                 debug.innerText = "Status: System Online";
                 debug.style.color = "#10b981";
-            }, (error) => {
-                debug.innerText = "Status: Sync Error";
-                debug.style.color = "#ef4444";
-                console.error(error);
             });
-        })
-        .catch(err => { debug.innerText = "Error: JSON failed to load"; });
+        });
 
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
@@ -156,6 +164,7 @@
             if (status === 'unknown') {
                 await deleteDoc(roadRef);
             } else {
+                // Ensure status name matches Legend/Logic
                 await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
             }
         } catch (e) { console.error("Update failed:", e); }
