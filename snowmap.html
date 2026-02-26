@@ -6,18 +6,21 @@
     <title>RI Plow Watch Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
+        /* This part is critical - without it, the map height is 0px */
         body, html { 
             margin: 0; padding: 0; height: 100%; width: 100%; 
             background: #0f1218; overflow: hidden; 
         }
         #map { 
-            position: absolute; top: 0; bottom: 0; 
-            width: 100%; z-index: 1; 
+            position: absolute; 
+            top: 0; bottom: 0; left: 0; right: 0;
+            width: 100%; height: 100%;
+            z-index: 1; 
         }
 
         .glass-panel {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(15, 18, 24, 0.8);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -28,23 +31,15 @@
 
         h1 { font-size: 1.3rem; margin: 0 0 12px 0; font-weight: 700; color: #60a5fa; }
         .legend { margin: 15px 0; }
-        .status-row { display: flex; align-items: center; margin: 8px 0; font-size: 0.95rem; opacity: 0.9; }
+        .status-row { display: flex; align-items: center; margin: 8px 0; font-size: 0.95rem; }
         .dot { width: 14px; height: 14px; border-radius: 4px; margin-right: 12px; }
-        .green { background: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
-        .red { background: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+        .green { background: #10b981; }
+        .red { background: #ef4444; }
         .gray { background: #4b5563; }
         
         button {
             width: 100%; padding: 12px; border: none; border-radius: 10px;
             background: #3b82f6; color: white; font-weight: 600; cursor: pointer;
-            margin-top: 10px; transition: 0.2s;
-        }
-        button:hover { background: #2563eb; }
-
-        .leaflet-tooltip {
-            background: rgba(15, 18, 24, 0.9);
-            color: white; border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
         }
     </style>
 </head>
@@ -52,6 +47,7 @@
 
 <div class="glass-panel">
     <h1>RI Plow Watch</h1>
+    <div id="loading-status" style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Loading roads...</div>
     <div class="legend">
         <div class="status-row"><div class="dot green"></div> Plowed</div>
         <div class="status-row"><div class="dot red"></div> Not Plowed</div>
@@ -85,25 +81,22 @@
         attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    // Using ./ ensures it looks in the same folder as index.html
-    fetch('./ri-roads.json')
+    // This handles the loading of your JSON file
+    fetch('ri-roads.json')
         .then(res => {
-            if (!res.ok) throw new Error("JSON file not found. Check if ri-roads.json is in the main GitHub folder!");
+            if (!res.ok) throw new Error("File not found");
             return res.json();
         })
         .then(data => {
+            document.getElementById('loading-status').innerText = "Roads Active";
+            
             L.geoJSON(data, {
-                style: { color: "#334155", weight: 3, opacity: 0.6, lineJoin: 'round' },
+                style: { color: "#334155", weight: 3, opacity: 0.6 },
                 onEachFeature: (feature, layer) => {
-                    // Make sure OBJECTID exists in your ri-roads.json properties
-                    const roadId = feature.properties.OBJECTID || feature.properties.id;
+                    const roadId = feature.properties.OBJECTID;
                     const roadName = feature.properties.St_Full || "RI Road";
 
-                    if (!roadId) return;
-
-                    layer.bindTooltip(roadName, { sticky: true });
-
-                    // Watch for changes in Firebase
+                    // Sync with Firestore
                     onSnapshot(doc(db, "roads", String(roadId)), (snapshot) => {
                         if (snapshot.exists()) {
                             const status = snapshot.data().status;
@@ -116,22 +109,21 @@
 
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
-                        const status = confirm(`Mark ${roadName} as PLOWED? (Cancel for Not Plowed)`) ? 'plowed' : 'not_plowed';
-                        
+                        const status = confirm(`Mark ${roadName} as PLOWED?`) ? 'plowed' : 'not_plowed';
                         setDoc(doc(db, "roads", String(roadId)), {
                             status: status,
-                            roadName: roadName,
                             updated: Date.now()
-                        }, { merge: true }).catch(err => console.error("Firebase Save Error:", err));
+                        }, { merge: true });
                     });
                 }
             }).addTo(map);
             
+            // Forces the map to redraw after everything loads
             setTimeout(() => { map.invalidateSize(); }, 500);
         })
         .catch(err => {
-            console.error("Critical Map Error:", err);
-            alert("Map failed to load. Check browser console (F12) for details.");
+            document.getElementById('loading-status').innerText = "Error loading data.";
+            console.error(err);
         });
     
     window.map = map;
