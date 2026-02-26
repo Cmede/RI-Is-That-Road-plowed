@@ -6,8 +6,15 @@
     <title>RI Plow Watch Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Inter', sans-serif; background: #0f1218; }
-        #map { height: 100vh; width: 100%; z-index: 1; background: #0f1218; }
+        /* Force the body and map to actually show up */
+        body, html { 
+            margin: 0; padding: 0; height: 100%; width: 100%; 
+            background: #0f1218; overflow: hidden; 
+        }
+        #map { 
+            position: absolute; top: 0; bottom: 0; 
+            width: 100%; z-index: 1; 
+        }
 
         .glass-panel {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
@@ -37,8 +44,7 @@
 
         .leaflet-tooltip {
             background: rgba(15, 18, 24, 0.9);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white; border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 4px;
         }
     </style>
@@ -47,7 +53,6 @@
 
 <div class="glass-panel">
     <h1>RI Plow Watch</h1>
-    <p style="font-size: 0.85rem; opacity: 0.7;">Click a road to update status.</p>
     <div class="legend">
         <div class="status-row"><div class="dot green"></div> Plowed</div>
         <div class="status-row"><div class="dot red"></div> Not Plowed</div>
@@ -81,24 +86,17 @@
         attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    // CHANGED: Added error logging for the fetch
     fetch('ri-roads.json')
         .then(res => {
-            if (!res.ok) throw new Error("Could not find ri-roads.json - check file name on GitHub!");
+            if (!res.ok) throw new Error("JSON file not found. Check name on GitHub!");
             return res.json();
         })
         .then(data => {
-            console.log("Road data loaded successfully!");
             L.geoJSON(data, {
-                style: { 
-                    color: "#334155", 
-                    weight: 3, 
-                    opacity: 0.6,
-                    lineJoin: 'round'
-                },
+                style: { color: "#334155", weight: 3, opacity: 0.6, lineJoin: 'round' },
                 onEachFeature: (feature, layer) => {
                     const roadId = feature.properties.OBJECTID;
-                    const roadName = feature.properties.St_Full || "Unknown Road";
+                    const roadName = feature.properties.St_Full || "RI Road";
 
                     layer.bindTooltip(roadName, { sticky: true });
 
@@ -107,26 +105,27 @@
                             const status = snapshot.data().status;
                             layer.setStyle({
                                 color: status === 'plowed' ? '#10b981' : '#ef4444',
-                                weight: 6, 
-                                opacity: 1
+                                weight: 6, opacity: 1
                             });
                         }
                     });
 
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
-                        const status = confirm(`Mark ${roadName} as PLOWED? (Cancel for Not Plowed)`) ? 'plowed' : 'not_plowed';
-                        
+                        const status = confirm(`Mark ${roadName} as PLOWED?`) ? 'plowed' : 'not_plowed';
                         setDoc(doc(db, "roads", String(roadId)), {
                             status: status,
                             roadName: roadName,
                             updated: Date.now()
-                        }, { merge: true }).catch(err => alert("Error saving: " + err.message));
+                        }, { merge: true });
                     });
                 }
             }).addTo(map);
+            
+            // Fixes the map not appearing correctly until resized
+            setTimeout(() => { map.invalidateSize(); }, 400);
         })
-        .catch(err => console.error(err));
+        .catch(err => console.error("Error loading roads:", err));
     
     window.map = map;
 </script>
