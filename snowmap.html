@@ -42,7 +42,7 @@
 
 <div class="glass-panel">
     <h3 style="margin:0; color: #60a5fa;">RI Plow Watch</h3>
-    <div id="debug-text" style="font-size: 11px; color: #10b981; margin: 8px 0;">Status: System Online</div>
+    <div id="debug-text" style="font-size: 11px; color: #fbbf24; margin: 8px 0;">Status: Connecting...</div>
     <div style="font-size: 13px; line-height: 1.6;">
         <div><span class="dot" style="background:#10b981"></span>Plowed</div>
         <div><span class="dot" style="background:#f59e0b"></span>Community</div>
@@ -68,7 +68,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWDc6CnSnDUkUFROTbWP196RJ5i1ZNqmw",
@@ -83,6 +83,7 @@
     const db = getFirestore(app);
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
+    let roadLayers = {}; // Store layer references for instant lookup
 
     // Map Init
     const map = L.map('map', { zoomControl: false }).setView([41.82, -71.41], 12);
@@ -90,64 +91,74 @@
         maxZoom: 19, attribution: '&copy; CartoDB'
     }).addTo(map);
 
-    // Refresh size on load
     map.whenReady(() => { setTimeout(() => { map.invalidateSize(); }, 300); });
 
-    // GPS Location Function
-    window.findMe = () => {
-        map.locate({setView: true, maxZoom: 16});
-    };
-
+    window.findMe = () => map.locate({setView: true, maxZoom: 16});
     map.on('locationfound', (e) => {
         L.circle(e.latlng, { radius: e.accuracy / 2, color: '#3b82f6' }).addTo(map);
     });
 
-    // Load Roads
+    // Load Roads and setup UI
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
             L.geoJSON(data, {
                 style: { color: "#334155", weight: 2.5, opacity: 0.5 },
                 onEachFeature: (feature, layer) => {
-                    const roadId = feature.properties.OBJECTID;
-                    const roadName = feature.properties.St_Full || "Rhode Island Road";
+                    const roadId = String(feature.properties.OBJECTID);
+                    roadLayers[roadId] = layer; // Map road ID to the visual layer
 
-                    // Real-time Firestore Listeners
-                    onSnapshot(doc(db, "roads", String(roadId)), (snap) => {
-                        if (snap.exists()) {
-                            const status = snap.data().status;
+                    layer.on('click', (e) => {
+                        L.DomEvent.stopPropagation(e);
+                        activeRoadId = roadId;
+                        document.getElementById('modal-road-name').innerText = feature.properties.St_Full || "Rhode Island Road";
+                        document.getElementById('status-modal').style.display = 'block';
+                    });
+                }
+            }).addTo(map);
+
+            // SYNC FIX: Listen to the WHOLE collection at once
+            debug.innerText = "Status: Syncing...";
+            onSnapshot(collection(db, "roads"), (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const roadId = change.doc.id;
+                    const layer = roadLayers[roadId];
+                    
+                    if (layer) {
+                        if (change.type === "removed") {
+                            // Reset to default if someone marks as "Unknown"
+                            layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
+                        } else {
+                            // Apply the plowed status colors
+                            const status = change.doc.data().status;
                             let color = '#334155';
                             if (status === 'plowed') color = '#10b981';
                             else if (status === 'community') color = '#f59e0b';
                             else if (status === 'not_plowed') color = '#ef4444';
                             layer.setStyle({ color: color, weight: 6, opacity: 1 });
-                        } else {
-                            layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
                         }
-                    });
-
-                    layer.on('click', (e) => {
-                        L.DomEvent.stopPropagation(e);
-                        activeRoadId = roadId;
-                        document.getElementById('modal-road-name').innerText = roadName;
-                        document.getElementById('status-modal').style.display = 'block';
-                    });
-                }
-            }).addTo(map);
+                    }
+                });
+                debug.innerText = "Status: System Online";
+                debug.style.color = "#10b981";
+            }, (error) => {
+                debug.innerText = "Status: Sync Error";
+                debug.style.color = "#ef4444";
+                console.error(error);
+            });
         })
         .catch(err => { debug.innerText = "Error: JSON failed to load"; });
 
-    // Update Logic
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
-        const roadRef = doc(db, "roads", String(activeRoadId));
+        const roadRef = doc(db, "roads", activeRoadId);
         try {
             if (status === 'unknown') {
                 await deleteDoc(roadRef);
             } else {
                 await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
             }
-        } catch (e) { console.error("Save failed", e); }
+        } catch (e) { console.error("Update failed:", e); }
         closeModal();
     };
 
@@ -155,8 +166,6 @@
         document.getElementById('status-modal').style.display = 'none';
         activeRoadId = null;
     };
-
-    window.map = map;
 </script>
 </body>
 </html>
