@@ -25,13 +25,16 @@
             transform: translate(-50%, -50%); z-index: 2000;
             background: #1e293b; padding: 20px; border-radius: 20px;
             border: 1px solid #334155; color: white; width: 260px; text-align: center;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
         }
 
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
             border: none; border-radius: 10px; cursor: pointer;
-            font-weight: bold; color: white; font-size: 14px;
+            font-weight: bold; color: white; font-size: 14px; transition: opacity 0.2s;
         }
+        .action-btn:hover { opacity: 0.8; }
+        
         .btn-green { background: #10b981; }
         .btn-orange { background: #f59e0b; }
         .btn-red { background: #ef4444; }
@@ -84,37 +87,41 @@
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
 
-    // Center map on Rhode Island
-    const map = L.map('map', { zoomControl: false }).setView([41.7, -71.5], 10);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+    // Fixed: Center on Providence/RI and ensure zoom is appropriate
+    const map = L.map('map', { zoomControl: false }).setView([41.824, -71.412], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
 
-    debug.innerText = "Status: Loading Road Data...";
+    debug.innerText = "Status: Fetching Roads...";
 
-    // Load the road file
-    fetch('ri-roads.json')
+    // CRITICAL: Used './' and exact lowercase filename for GitHub Pages compatibility
+    fetch('./ri-roads.json')
         .then(res => {
-            if (!res.ok) throw new Error('File not found');
+            if (!res.ok) throw new Error(`HTTP Error ${res.status}: Check if ri-roads.json exists in root`);
             return res.json();
         })
         .then(data => {
             debug.innerText = "Status: Rendering Map...";
+            
             L.geoJSON(data, {
-                style: { color: "#334155", weight: 2, opacity: 0.5 },
+                style: { color: "#334155", weight: 2.5, opacity: 0.5 },
                 onEachFeature: (feature, layer) => {
                     const roadId = feature.properties.OBJECTID;
                     const roadName = feature.properties.St_Full || "Rhode Island Road";
 
-                    // Listen for real-time updates from Firebase
+                    // Firestore sync
                     onSnapshot(doc(db, "roads", String(roadId)), (snap) => {
                         if (snap.exists()) {
                             const status = snap.data().status;
-                            let color = '#334155'; // Default
+                            let color = '#334155';
                             if (status === 'plowed') color = '#10b981';
                             else if (status === 'community') color = '#f59e0b';
                             else if (status === 'not_plowed') color = '#ef4444';
-                            layer.setStyle({ color: color, weight: 5, opacity: 1 });
+                            
+                            layer.setStyle({ color: color, weight: 6, opacity: 1 });
                         } else {
-                            layer.setStyle({ color: "#334155", weight: 2, opacity: 0.5 });
+                            layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
                         }
                     });
 
@@ -126,20 +133,30 @@
                     });
                 }
             }).addTo(map);
+            
             debug.innerText = "Status: Online";
+            // Fix Leaflet gray box issue
+            setTimeout(() => { map.invalidateSize(); }, 400);
         })
         .catch(err => {
-            debug.innerText = "Status: Error loading ri-roads.json";
+            debug.style.color = "#ef4444";
+            debug.innerText = "Error: " + err.message;
             console.error(err);
         });
 
+    // Global UI handlers
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
         const roadRef = doc(db, "roads", String(activeRoadId));
-        if (status === 'unknown') {
-            await deleteDoc(roadRef);
-        } else {
-            await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
+        
+        try {
+            if (status === 'unknown') {
+                await deleteDoc(roadRef);
+            } else {
+                await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
+            }
+        } catch (e) {
+            console.error("Firestore Error:", e);
         }
         closeModal();
     };
