@@ -6,13 +6,16 @@
     <title>RI Plow Watch Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
+        /* CRITICAL: Force the map to have a physical height */
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; background: #0f1218; overflow: hidden; font-family: sans-serif; }
-        #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; width: 100%; height: 100%; z-index: 1; }
+        #map { 
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0; 
+            height: 100vh !important; width: 100vw !important; z-index: 1; 
+        }
 
-        /* Modern Glass UI */
         .glass-panel {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(15, 18, 24, 0.9);
+            background: rgba(15, 18, 24, 0.95);
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 15px; padding: 15px; color: white;
@@ -36,7 +39,6 @@
         .btn-orange { background: #f59e0b; }
         .btn-red { background: #ef4444; }
         .btn-gray { background: #64748b; }
-        .btn-cancel { background: transparent; color: #94a3b8; border: 1px solid #334155; }
         
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
     </style>
@@ -44,14 +46,14 @@
 <body>
 
 <div class="glass-panel">
-    <h3 style="margin:0 0 10px 0; color: #60a5fa;">RI Plow Watch</h3>
-    <div id="debug-text" style="font-size: 11px; color: #94a3b8; margin-bottom: 10px;">Status: Initializing...</div>
+    <h3 style="margin:0; color: #60a5fa;">RI Plow Watch</h3>
+    <div id="debug-text" style="font-size: 11px; color: #94a3b8; margin: 8px 0;">Status: Connecting...</div>
     <div style="font-size: 13px; line-height: 1.6;">
-        <div><span class="dot" style="background:#10b981"></span>Plowed (City)</div>
-        <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
+        <div><span class="dot" style="background:#10b981"></span>Plowed</div>
+        <div><span class="dot" style="background:#f59e0b"></span>Community</div>
         <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
-        <div><span class="dot" style="background:#334155"></span>Unknown</div>
     </div>
+    <button onclick="window.location.reload()" style="width:100%; margin-top:10px; cursor:pointer;">Refresh Map</button>
 </div>
 
 <div id="status-modal">
@@ -60,12 +62,13 @@
     <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
     <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
     <button class="action-btn btn-gray" onclick="updateStatus('unknown')">Reset to Unknown</button>
-    <button class="action-btn btn-cancel" onclick="closeModal()">Cancel</button>
+    <button onclick="closeModal()" style="background:none; border:none; color:#94a3b8; cursor:pointer; margin-top:10px;">Cancel</button>
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, doc, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -84,22 +87,31 @@
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
 
-    // Use a solid center for RI: Providence coordinates
-    const map = L.map('map', { zoomControl: false }).setView([41.8245, -71.4128], 12);
+    // Initialize Map on Providence
+    const map = L.map('map', { zoomControl: false }).setView([41.82, -71.41], 12);
+    
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
         attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    debug.innerText = "Status: Loading Road Data...";
+    // FIX: Force map to recognize its container size immediately
+    map.whenReady(() => {
+        console.log("Map is ready");
+        setTimeout(() => { map.invalidateSize(); }, 200);
+    });
 
-    // CRITICAL: We use './' to force GitHub to look in the current folder
+    debug.innerText = "Status: Loading Roads...";
+
+    // Fetch using the exact case and relative path for GitHub
     fetch('./ri-roads.json')
         .then(res => {
-            if (!res.ok) throw new Error('Cannot find ri-roads.json - Check GitHub file name!');
+            if (!res.ok) throw new Error("File ri-roads.json not found!");
             return res.json();
         })
         .then(data => {
-            debug.innerText = "Status: Drawing Roads...";
+            debug.innerText = "Status: Syncing with Firestore...";
+            
             L.geoJSON(data, {
                 style: { color: "#334155", weight: 2, opacity: 0.5 },
                 onEachFeature: (feature, layer) => {
@@ -113,7 +125,7 @@
                             if (status === 'plowed') color = '#10b981';
                             else if (status === 'community') color = '#f59e0b';
                             else if (status === 'not_plowed') color = '#ef4444';
-                            layer.setStyle({ color: color, weight: 5, opacity: 1 });
+                            layer.setStyle({ color: color, weight: 6, opacity: 1 });
                         } else {
                             layer.setStyle({ color: "#334155", weight: 2, opacity: 0.5 });
                         }
@@ -127,23 +139,19 @@
                     });
                 }
             }).addTo(map);
-            debug.innerText = "Status: Online";
-            // Helps the map render correctly on first load
-            setTimeout(() => { map.invalidateSize(); }, 500);
+            
+            debug.innerText = "Status: System Online";
         })
         .catch(err => {
-            debug.innerText = "CRITICAL ERROR: " + err.message;
+            debug.innerText = "Error: " + err.message;
             console.error(err);
         });
 
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
         const roadRef = doc(db, "roads", String(activeRoadId));
-        if (status === 'unknown') {
-            await deleteDoc(roadRef);
-        } else {
-            await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
-        }
+        if (status === 'unknown') await deleteDoc(roadRef);
+        else await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
         closeModal();
     };
 
