@@ -6,7 +6,6 @@
     <title>RI Plow Watch Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* Force the body and map to actually show up */
         body, html { 
             margin: 0; padding: 0; height: 100%; width: 100%; 
             background: #0f1218; overflow: hidden; 
@@ -86,20 +85,25 @@
         attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    fetch('ri-roads.json')
+    // Using ./ ensures it looks in the same folder as index.html
+    fetch('./ri-roads.json')
         .then(res => {
-            if (!res.ok) throw new Error("JSON file not found. Check name on GitHub!");
+            if (!res.ok) throw new Error("JSON file not found. Check if ri-roads.json is in the main GitHub folder!");
             return res.json();
         })
         .then(data => {
             L.geoJSON(data, {
                 style: { color: "#334155", weight: 3, opacity: 0.6, lineJoin: 'round' },
                 onEachFeature: (feature, layer) => {
-                    const roadId = feature.properties.OBJECTID;
+                    // Make sure OBJECTID exists in your ri-roads.json properties
+                    const roadId = feature.properties.OBJECTID || feature.properties.id;
                     const roadName = feature.properties.St_Full || "RI Road";
+
+                    if (!roadId) return;
 
                     layer.bindTooltip(roadName, { sticky: true });
 
+                    // Watch for changes in Firebase
                     onSnapshot(doc(db, "roads", String(roadId)), (snapshot) => {
                         if (snapshot.exists()) {
                             const status = snapshot.data().status;
@@ -112,20 +116,23 @@
 
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
-                        const status = confirm(`Mark ${roadName} as PLOWED?`) ? 'plowed' : 'not_plowed';
+                        const status = confirm(`Mark ${roadName} as PLOWED? (Cancel for Not Plowed)`) ? 'plowed' : 'not_plowed';
+                        
                         setDoc(doc(db, "roads", String(roadId)), {
                             status: status,
                             roadName: roadName,
                             updated: Date.now()
-                        }, { merge: true });
+                        }, { merge: true }).catch(err => console.error("Firebase Save Error:", err));
                     });
                 }
             }).addTo(map);
             
-            // Fixes the map not appearing correctly until resized
-            setTimeout(() => { map.invalidateSize(); }, 400);
+            setTimeout(() => { map.invalidateSize(); }, 500);
         })
-        .catch(err => console.error("Error loading roads:", err));
+        .catch(err => {
+            console.error("Critical Map Error:", err);
+            alert("Map failed to load. Check browser console (F12) for details.");
+        });
     
     window.map = map;
 </script>
