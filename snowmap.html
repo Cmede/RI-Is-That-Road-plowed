@@ -25,16 +25,13 @@
             transform: translate(-50%, -50%); z-index: 2000;
             background: #1e293b; padding: 20px; border-radius: 20px;
             border: 1px solid #334155; color: white; width: 260px; text-align: center;
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
         }
 
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
             border: none; border-radius: 10px; cursor: pointer;
-            font-weight: bold; color: white; font-size: 14px; transition: opacity 0.2s;
+            font-weight: bold; color: white; font-size: 14px;
         }
-        .action-btn:hover { opacity: 0.8; }
-        
         .btn-green { background: #10b981; }
         .btn-orange { background: #f59e0b; }
         .btn-red { background: #ef4444; }
@@ -87,30 +84,28 @@
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
 
-    // Fixed: Center on Providence/RI and ensure zoom is appropriate
-    const map = L.map('map', { zoomControl: false }).setView([41.824, -71.412], 12);
+    // Use a solid center for RI: Providence coordinates
+    const map = L.map('map', { zoomControl: false }).setView([41.8245, -71.4128], 12);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    debug.innerText = "Status: Fetching Roads...";
+    debug.innerText = "Status: Loading Road Data...";
 
-    // CRITICAL: Used './' and exact lowercase filename for GitHub Pages compatibility
+    // CRITICAL: We use './' to force GitHub to look in the current folder
     fetch('./ri-roads.json')
         .then(res => {
-            if (!res.ok) throw new Error(`HTTP Error ${res.status}: Check if ri-roads.json exists in root`);
+            if (!res.ok) throw new Error('Cannot find ri-roads.json - Check GitHub file name!');
             return res.json();
         })
         .then(data => {
-            debug.innerText = "Status: Rendering Map...";
-            
+            debug.innerText = "Status: Drawing Roads...";
             L.geoJSON(data, {
-                style: { color: "#334155", weight: 2.5, opacity: 0.5 },
+                style: { color: "#334155", weight: 2, opacity: 0.5 },
                 onEachFeature: (feature, layer) => {
                     const roadId = feature.properties.OBJECTID;
-                    const roadName = feature.properties.St_Full || "Rhode Island Road";
+                    const roadName = feature.properties.St_Full || "Road";
 
-                    // Firestore sync
                     onSnapshot(doc(db, "roads", String(roadId)), (snap) => {
                         if (snap.exists()) {
                             const status = snap.data().status;
@@ -118,10 +113,9 @@
                             if (status === 'plowed') color = '#10b981';
                             else if (status === 'community') color = '#f59e0b';
                             else if (status === 'not_plowed') color = '#ef4444';
-                            
-                            layer.setStyle({ color: color, weight: 6, opacity: 1 });
+                            layer.setStyle({ color: color, weight: 5, opacity: 1 });
                         } else {
-                            layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
+                            layer.setStyle({ color: "#334155", weight: 2, opacity: 0.5 });
                         }
                     });
 
@@ -133,30 +127,22 @@
                     });
                 }
             }).addTo(map);
-            
             debug.innerText = "Status: Online";
-            // Fix Leaflet gray box issue
-            setTimeout(() => { map.invalidateSize(); }, 400);
+            // Helps the map render correctly on first load
+            setTimeout(() => { map.invalidateSize(); }, 500);
         })
         .catch(err => {
-            debug.style.color = "#ef4444";
-            debug.innerText = "Error: " + err.message;
+            debug.innerText = "CRITICAL ERROR: " + err.message;
             console.error(err);
         });
 
-    // Global UI handlers
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
         const roadRef = doc(db, "roads", String(activeRoadId));
-        
-        try {
-            if (status === 'unknown') {
-                await deleteDoc(roadRef);
-            } else {
-                await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
-            }
-        } catch (e) {
-            console.error("Firestore Error:", e);
+        if (status === 'unknown') {
+            await deleteDoc(roadRef);
+        } else {
+            await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
         }
         closeModal();
     };
