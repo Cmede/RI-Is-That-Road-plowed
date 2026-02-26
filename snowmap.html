@@ -6,65 +6,52 @@
     <title>RI Plow Watch Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { 
-            margin: 0; padding: 0; height: 100%; width: 100%; 
-            background: #0f1218; overflow: hidden; font-family: sans-serif;
-        }
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; background: #0f1218; overflow: hidden; font-family: sans-serif; }
         #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; width: 100%; height: 100%; z-index: 1; }
 
-        /* UI Panels */
+        /* Modern Glass UI */
         .glass-panel {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(15, 18, 24, 0.85);
-            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 20px; padding: 20px; color: white;
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-            max-width: 260px;
+            background: rgba(15, 18, 24, 0.9);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px; padding: 15px; color: white;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            width: 220px;
         }
 
-        /* Status Modal */
         #status-modal {
             display: none; position: fixed; top: 50%; left: 50%; 
             transform: translate(-50%, -50%); z-index: 2000;
-            background: #1e293b; padding: 25px; border-radius: 20px;
-            border: 1px solid #334155; color: white; width: 280px; text-align: center;
+            background: #1e293b; padding: 20px; border-radius: 20px;
+            border: 1px solid #334155; color: white; width: 260px; text-align: center;
         }
 
-        h1 { font-size: 1.2rem; margin: 0 0 10px 0; color: #60a5fa; }
-        .legend-item { display: flex; align-items: center; margin: 8px 0; font-size: 0.9rem; }
-        .dot { width: 12px; height: 12px; border-radius: 3px; margin-right: 10px; }
-        
-        /* Status Colors */
-        .green { background: #10b981; }
-        .orange { background: #f59e0b; }
-        .red { background: #ef4444; }
-        .gray { background: #4b5563; }
-        
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
             border: none; border-radius: 10px; cursor: pointer;
-            font-weight: bold; color: white; transition: 0.2s;
+            font-weight: bold; color: white; font-size: 14px;
         }
         .btn-green { background: #10b981; }
         .btn-orange { background: #f59e0b; }
         .btn-red { background: #ef4444; }
-        .btn-gray { background: #4b5563; }
-        .btn-cancel { background: transparent; color: #94a3b8; margin-top: 5px; }
+        .btn-gray { background: #64748b; }
+        .btn-cancel { background: transparent; color: #94a3b8; border: 1px solid #334155; }
+        
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
     </style>
 </head>
 <body>
 
 <div class="glass-panel">
-    <h1>RI Plow Watch</h1>
-    <div id="loading-status" style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px;">Connecting...</div>
-    <div class="legend">
-        <div class="legend-item"><div class="dot green"></div> City Plowed</div>
-        <div class="legend-item"><div class="dot orange"></div> Community Cleared</div>
-        <div class="legend-item"><div class="dot red"></div> Not Plowed</div>
-        <div class="legend-item"><div class="dot gray"></div> Unknown</div>
+    <h3 style="margin:0 0 10px 0; color: #60a5fa;">RI Plow Watch</h3>
+    <div id="debug-text" style="font-size: 11px; color: #94a3b8; margin-bottom: 10px;">Status: Initializing...</div>
+    <div style="font-size: 13px; line-height: 1.6;">
+        <div><span class="dot" style="background:#10b981"></span>Plowed (City)</div>
+        <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
+        <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
+        <div><span class="dot" style="background:#334155"></span>Unknown</div>
     </div>
-    <button onclick="map.locate({setView: true, maxZoom: 16})" style="width:100%; padding:10px; border-radius:8px; cursor:pointer;">My Location</button>
 </div>
 
 <div id="status-modal">
@@ -94,33 +81,40 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const debug = document.getElementById('debug-text');
     let activeRoadId = null;
 
-    const map = L.map('map', { zoomControl: false }).setView([41.72, -71.45], 11);
+    // Center map on Rhode Island
+    const map = L.map('map', { zoomControl: false }).setView([41.7, -71.5], 10);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
+    debug.innerText = "Status: Loading Road Data...";
+
+    // Load the road file
     fetch('ri-roads.json')
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) throw new Error('File not found');
+            return res.json();
+        })
         .then(data => {
-            document.getElementById('loading-status').innerText = "System Ready • Click Road";
-            
+            debug.innerText = "Status: Rendering Map...";
             L.geoJSON(data, {
-                style: { color: "#334155", weight: 3, opacity: 0.6 },
+                style: { color: "#334155", weight: 2, opacity: 0.5 },
                 onEachFeature: (feature, layer) => {
                     const roadId = feature.properties.OBJECTID;
                     const roadName = feature.properties.St_Full || "Rhode Island Road";
 
-                    onSnapshot(doc(db, "roads", String(roadId)), (snapshot) => {
-                        if (snapshot.exists()) {
-                            const status = snapshot.data().status;
-                            let color = '#ef4444'; 
+                    // Listen for real-time updates from Firebase
+                    onSnapshot(doc(db, "roads", String(roadId)), (snap) => {
+                        if (snap.exists()) {
+                            const status = snap.data().status;
+                            let color = '#334155'; // Default
                             if (status === 'plowed') color = '#10b981';
                             else if (status === 'community') color = '#f59e0b';
-                            else if (status === 'unknown') color = '#334155'; // Back to gray
-                            
-                            layer.setStyle({ color: color, weight: 6, opacity: 1 });
+                            else if (status === 'not_plowed') color = '#ef4444';
+                            layer.setStyle({ color: color, weight: 5, opacity: 1 });
                         } else {
-                            layer.setStyle({ color: "#334155", weight: 3, opacity: 0.6 });
+                            layer.setStyle({ color: "#334155", weight: 2, opacity: 0.5 });
                         }
                     });
 
@@ -132,15 +126,18 @@
                     });
                 }
             }).addTo(map);
+            debug.innerText = "Status: Online";
+        })
+        .catch(err => {
+            debug.innerText = "Status: Error loading ri-roads.json";
+            console.error(err);
         });
 
-    // Global functions for modal
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
         const roadRef = doc(db, "roads", String(activeRoadId));
-        
         if (status === 'unknown') {
-            await deleteDoc(roadRef); // Removing from DB resets it to default gray
+            await deleteDoc(roadRef);
         } else {
             await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
         }
