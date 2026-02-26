@@ -16,6 +16,9 @@
             padding: 15px; color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); width: 220px;
         }
 
+        .credit { font-size: 10px; color: #94a3b8; margin-top: 4px; opacity: 0.8; }
+        .instruction { font-size: 11px; color: #60a5fa; margin: 8px 0; font-style: italic; font-weight: bold; }
+
         #status-modal {
             display: none; position: fixed; top: 50%; left: 50%; 
             transform: translate(-50%, -50%); z-index: 2000;
@@ -42,7 +45,10 @@
 
 <div class="glass-panel">
     <h3 style="margin:0; color: #60a5fa;">RI Plow Watch</h3>
+    <div class="credit">Created by Charles Medeiros</div>
+    <div class="instruction">📍 Click a road to mark status</div>
     <div id="debug-text" style="font-size: 11px; color: #fbbf24; margin: 8px 0;">Status: Connecting...</div>
+    <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
     <div style="font-size: 13px; line-height: 1.6;">
         <div><span class="dot" style="background:#10b981"></span>Plowed</div>
         <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
@@ -80,7 +86,7 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db = getFirestore(app); // Standard init to ensure fresh data on refresh
     const debug = document.getElementById('debug-text');
     let activeRoadId = null;
     let roadLayers = {}; 
@@ -100,24 +106,21 @@
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
-            // WE ADD TWO LAYERS: A thick invisible one for clicking, and the visible one
             L.geoJSON(data, {
                 style: (feature) => ({
                     color: "transparent", 
-                    weight: 25, // HUGE click area
+                    weight: 25, 
                     opacity: 0
                 }),
                 onEachFeature: (feature, layer) => {
                     const roadId = String(feature.properties.OBJECTID);
                     
-                    // Create the VISIBLE line as a sub-layer
                     const visibleLine = L.geoJSON(feature, {
                         style: { color: "#334155", weight: 2.5, opacity: 0.5 }
                     }).addTo(map);
 
                     roadLayers[roadId] = visibleLine;
 
-                    // Click event on the INVISIBLE thick line
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
                         activeRoadId = roadId;
@@ -129,15 +132,13 @@
 
             debug.innerText = "Status: Syncing...";
             
-            // This is the core sync logic. 
-            // collection(db, "roads") monitors the entire database for any changes.
+            // Standard real-time listener
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
                     const layerGroup = roadLayers[roadId];
                     
                     if (layerGroup) {
-                        // GeoJSON groups store the actual line in _layers
                         const layer = Object.values(layerGroup._layers)[0];
                         
                         if (change.type === "removed") {
@@ -164,7 +165,6 @@
             if (status === 'unknown') {
                 await deleteDoc(roadRef);
             } else {
-                // Ensure status name matches Legend/Logic
                 await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
             }
         } catch (e) { console.error("Update failed:", e); }
