@@ -8,40 +8,32 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; background: #0f1218; overflow: hidden; font-family: sans-serif; }
         #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; height: 100vh !important; width: 100vw !important; z-index: 1; }
-
-        /* Mobile Optimization: Prevents zoom delay on taps */
         button, .glass-panel, #map { touch-action: manipulation; }
-
         .glass-panel {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
             background: rgba(15, 18, 24, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px;
             padding: 15px; color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); width: 220px;
         }
-
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.7); z-index: 3000; backdrop-filter: blur(4px);
         }
-
         .modal-content {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; padding: 25px; border-radius: 20px;
             border: 1px solid #334155; color: white; width: 300px; text-align: center;
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
         }
-
         .credit { font-size: 10px; color: #94a3b8; margin-top: 4px; opacity: 0.8; }
         .instruction { font-size: 11px; color: #60a5fa; margin: 8px 0; font-style: italic; font-weight: bold; }
         .last-update { font-size: 12px; color: #fbbf24; margin-bottom: 15px; display: block; }
-
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
             border: none; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; font-size: 14px;
             transition: transform 0.1s;
         }
         .action-btn:active { transform: scale(0.95); }
-        
         .btn-green { background: #10b981; }
         .btn-orange { background: #f59e0b; }
         .btn-purple { background: #8b5cf6; }
@@ -49,10 +41,8 @@
         .btn-gray { background: #64748b; }
         .btn-location { background: #3b82f6; margin-top: 10px; }
         .btn-share { background: #475569; margin-top: 5px; } 
-        
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
         .road-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-        
         ul.guide-list { text-align: left; font-size: 13px; line-height: 1.6; color: #cbd5e1; padding-left: 20px; }
     </style>
 </head>
@@ -110,7 +100,7 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+    import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWDc6CnSnDUkUFROTbWP196RJ5i1ZNqmw",
@@ -118,7 +108,8 @@
         projectId: "ri-snow-mpa",
         storageBucket: "ri-snow-mpa.firebasestorage.app",
         messagingSenderId: "372597950937",
-        appId: "1:372597950937:web:52b0651133e2e7256571c8"
+        appId: "1:372597950937:web:52b0651133e2e7256571c8",
+        measurementId: "G-XXXXXXXXXX" // Note: Recommended to add your G- ID here
     };
 
     const app = initializeApp(firebaseConfig);
@@ -135,7 +126,55 @@
         maxZoom: 19, attribution: '&copy; CartoDB'
     }).addTo(map);
 
-    window.closeWelcome = () => document.getElementById('welcome-modal').style.display = 'none';
+    // --- Analytics Enhanced Functions ---
+
+    window.closeWelcome = () => {
+        document.getElementById('welcome-modal').style.display = 'none';
+        logEvent(analytics, 'welcome_closed');
+    };
+
+    window.findMe = () => {
+        logEvent(analytics, 'find_me_clicked');
+        const btn = document.getElementById('find-btn');
+        btn.innerText = "🔍 Locating...";
+        map.locate({setView: true, maxZoom: 17});
+    };
+
+    window.shareSite = async () => {
+        logEvent(analytics, 'share_clicked');
+        if (navigator.share) {
+            try { await navigator.share({ title: 'RI Plow Watch', url: window.location.href }); } catch (err) {}
+        } else {
+            navigator.clipboard.writeText(window.location.href);
+            alert("Link copied!");
+        }
+    };
+
+    window.updateStatus = async (status) => {
+        if (!activeRoadId) return;
+        
+        // Track the update event
+        logEvent(analytics, 'status_update', {
+            road_id: activeRoadId,
+            status_type: status
+        });
+        logEvent(analytics, 'user_engagement');
+
+        const roadRef = doc(db, "roads", activeRoadId);
+        try {
+            if (status === 'unknown') {
+                await deleteDoc(roadRef);
+            } else {
+                await setDoc(roadRef, { 
+                    status, 
+                    updated: serverTimestamp() 
+                }, { merge: true });
+            }
+        } catch (e) { console.error(e); }
+        closeStatusModal();
+    };
+
+    // --- Core Logic ---
 
     function timeSince(date) {
         if (!date) return "";
@@ -146,12 +185,6 @@
         if (interval > 1) return Math.floor(interval) + "m ago";
         return "Just now";
     }
-
-    window.findMe = () => {
-        const btn = document.getElementById('find-btn');
-        btn.innerText = "🔍 Locating...";
-        map.locate({setView: true, maxZoom: 17});
-    };
 
     map.on('locationfound', (e) => {
         document.getElementById('find-btn').innerText = "📍 Find My Street";
@@ -203,18 +236,16 @@
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
-            // This is the interaction layer (invisible, but huge touch target)
             L.geoJSON(data, {
                 style: () => ({ 
                     color: "transparent", 
-                    weight: 45, // Massive target for fingers
+                    weight: 45, 
                     opacity: 0 
                 }),
                 onEachFeature: (feature, layer) => {
                     const roadId = String(feature.properties.OBJECTID);
                     const roadName = feature.properties.St_Full || "Rhode Island Road";
 
-                    // Create the visible (aesthetic) line
                     const visibleLine = L.geoJSON(feature, {
                         style: { 
                             color: "#334155", 
@@ -222,17 +253,21 @@
                             opacity: 0.6,
                             lineCap: 'round'
                         },
-                        interactive: false // Clicks pass through to the invisible buffer
+                        interactive: false
                     }).addTo(map);
                     
                     roadLayers[roadId] = visibleLine;
                     visibleLine.feature = feature;
 
-                    // Handle the tap on the big invisible buffer
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
                         
-                        // Visual Feedback: Flash the road so user knows which one they hit
+                        // Analytics for Road Selection
+                        logEvent(analytics, 'road_clicked', {
+                            road_name: roadName,
+                            road_id: roadId
+                        });
+
                         const vLayer = Object.values(visibleLine._layers)[0];
                         const oldWeight = vLayer.options.weight;
                         vLayer.setStyle({ weight: 10, opacity: 1 });
@@ -270,34 +305,9 @@
             });
         });
 
-    window.updateStatus = async (status) => {
-        if (!activeRoadId) return;
-        const roadRef = doc(db, "roads", activeRoadId);
-        try {
-            if (status === 'unknown') {
-                await deleteDoc(roadRef);
-            } else {
-                await setDoc(roadRef, { 
-                    status, 
-                    updated: serverTimestamp() 
-                }, { merge: true });
-            }
-        } catch (e) { console.error(e); }
-        closeStatusModal();
-    };
-
     window.closeStatusModal = () => {
         document.getElementById('status-modal').style.display = 'none';
         activeRoadId = null;
-    };
-
-    window.shareSite = async () => {
-        if (navigator.share) {
-            try { await navigator.share({ title: 'RI Plow Watch', url: window.location.href }); } catch (err) {}
-        } else {
-            navigator.clipboard.writeText(window.location.href);
-            alert("Link copied!");
-        }
     };
 </script>
 </body>
