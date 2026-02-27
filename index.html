@@ -16,7 +16,6 @@
             padding: 15px; color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); width: 220px;
         }
 
-        /* Generic Modal Style */
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.7); z-index: 3000; backdrop-filter: blur(4px);
@@ -31,11 +30,15 @@
 
         .credit { font-size: 10px; color: #94a3b8; margin-top: 4px; opacity: 0.8; }
         .instruction { font-size: 11px; color: #60a5fa; margin: 8px 0; font-style: italic; font-weight: bold; }
+        .last-update { font-size: 12px; color: #fbbf24; margin-bottom: 15px; display: block; }
 
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
             border: none; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; font-size: 14px;
+            transition: transform 0.1s;
         }
+        .action-btn:active { transform: scale(0.98); }
+        
         .btn-green { background: #10b981; }
         .btn-orange { background: #f59e0b; }
         .btn-red { background: #ef4444; }
@@ -56,11 +59,11 @@
         <h2 style="margin-top: 0; color: #60a5fa;">❄️ RI Plow Watch</h2>
         <p style="font-size: 14px; color: #94a3b8;">Help your neighbors navigate the storm!</p>
         <ul class="guide-list">
-            <li><b>Find:</b> Use the blue button to locate your street.</li>
-            <li><b>Report:</b> Tap any road to mark it as plowed or snowy.</li>
-            <li><b>Update:</b> If a road gets cleared later, please come back and update the status!</li>
+            <li><b>Find:</b> Use the blue button to snap to your street.</li>
+            <li><b>Report:</b> Mark if your road is cleared or buried.</li>
+            <li><b>Crowdsource:</b> See real-time updates from other drivers.</li>
         </ul>
-        <button class="action-btn btn-green" onclick="closeWelcome()">Got it, let's go!</button>
+        <button class="action-btn btn-green" onclick="closeWelcome()">Start Reporting</button>
     </div>
 </div>
 
@@ -76,14 +79,16 @@
         <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
         <div><span class="dot" style="background:#334155"></span>Unknown</div>
     </div>
-    <button class="action-btn btn-location" onclick="findMe()">📍 Find My Street</button>
+    <button class="action-btn btn-location" id="find-btn" onclick="findMe()">📍 Find My Street</button>
     <button class="action-btn btn-share" onclick="shareSite()">🔗 Share This Map</button>
 </div>
 
 <div id="status-modal" class="modal-overlay">
     <div class="modal-content">
         <div class="road-label">Updating:</div>
-        <h3 id="modal-road-name" style="margin: 5px 0 15px 0; color: #60a5fa;">Road</h3>
+        <h3 id="modal-road-name" style="margin: 5px 0 5px 0; color: #60a5fa;">Road</h3>
+        <span id="modal-last-update" class="last-update"></span>
+        
         <button class="action-btn btn-green" onclick="updateStatus('plowed')">Plowed (City)</button>
         <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
         <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
@@ -98,7 +103,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
     import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
 
     const firebaseConfig = {
@@ -107,93 +112,123 @@
         projectId: "ri-snow-mpa",
         storageBucket: "ri-snow-mpa.firebasestorage.app",
         messagingSenderId: "372597950937",
-        appId: "1:372597950937:web:52b0651133e2e7256571c8",
-        measurementId: "G-XXXXXXXXXX" // REPLACE WITH YOUR ID
+        appId: "1:372597950937:web:52b0651133e2e7256571c8"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const analytics = getAnalytics(app);
     const debug = document.getElementById('debug-text');
+    
     let activeRoadId = null;
     let roadLayers = {}; 
+    let roadLiveStats = {}; // Stores latest status and time for each road
 
     const map = L.map('map', { zoomControl: false }).setView([41.82, -71.41], 12);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19, attribution: '&copy; CartoDB'
     }).addTo(map);
 
-    map.whenReady(() => { setTimeout(() => { map.invalidateSize(); }, 300); });
+    window.closeWelcome = () => document.getElementById('welcome-modal').style.display = 'none';
 
-    // Welcome Control
-    window.closeWelcome = () => {
-        document.getElementById('welcome-modal').style.display = 'none';
-        logEvent(analytics, 'welcome_closed');
-    };
+    // Helper: Format Timestamp to "X mins ago"
+    function timeSince(date) {
+        if (!date) return "";
+        const seconds = Math.floor((new Date() - date) / 1000);
+        let interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + "h ago";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + "m ago";
+        return "Just now";
+    }
 
+    // Find Me & Auto-Select Road
     window.findMe = () => {
-        map.locate({setView: true, maxZoom: 16});
-        logEvent(analytics, 'find_me_clicked');
+        const btn = document.getElementById('find-btn');
+        btn.innerText = "🔍 Locating...";
+        map.locate({setView: true, maxZoom: 17});
     };
 
     map.on('locationfound', (e) => {
-        L.circle(e.latlng, { radius: e.accuracy / 2, color: '#3b82f6' }).addTo(map);
+        document.getElementById('find-btn').innerText = "📍 Find My Street";
+        L.circle(e.latlng, { radius: 15, color: '#3b82f6', fillOpacity: 0.5 }).addTo(map);
+
+        let minDistance = Infinity;
+        let closestId = null;
+        let closestName = "";
+
+        for (const id in roadLayers) {
+            const layerGroup = roadLayers[id];
+            const layer = Object.values(layerGroup._layers)[0];
+            const dist = e.latlng.distanceTo(layer.getBounds().getCenter());
+            if (dist < minDistance) {
+                minDistance = dist;
+                closestId = id;
+                closestName = layer.feature.properties.St_Full || "Rhode Island Road";
+            }
+        }
+
+        if (closestId && minDistance < 150) {
+            openRoadModal(closestId, closestName);
+        }
     });
 
-    window.shareSite = async () => {
-        logEvent(analytics, 'share_clicked');
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: 'RI Plow Watch',
-                    text: 'Help track snow plow progress in RI!',
-                    url: window.location.href
-                });
-            } catch (err) {}
+    function openRoadModal(id, name) {
+        activeRoadId = id;
+        document.getElementById('modal-road-name').innerText = name;
+        
+        const stats = roadLiveStats[id];
+        const updateEl = document.getElementById('modal-last-update');
+        if (stats && stats.updated) {
+            updateEl.innerText = `Last updated: ${timeSince(stats.updated.toDate())}`;
         } else {
-            navigator.clipboard.writeText(window.location.href);
-            alert("Link copied to clipboard!");
+            updateEl.innerText = "No recent reports";
         }
-    };
+        
+        document.getElementById('status-modal').style.display = 'block';
+    }
 
+    // Load Roads from GeoJSON
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
             L.geoJSON(data, {
-                style: () => ({ color: "transparent", weight: 25, opacity: 0 }),
+                style: () => ({ color: "transparent", weight: 30, opacity: 0 }),
                 onEachFeature: (feature, layer) => {
                     const roadId = String(feature.properties.OBJECTID);
                     const visibleLine = L.geoJSON(feature, {
                         style: { color: "#334155", weight: 2.5, opacity: 0.5 }
                     }).addTo(map);
+                    
                     roadLayers[roadId] = visibleLine;
+                    visibleLine.feature = feature;
 
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
-                        activeRoadId = roadId;
-                        document.getElementById('modal-road-name').innerText = feature.properties.St_Full || "Rhode Island Road";
-                        document.getElementById('status-modal').style.display = 'block';
-                        logEvent(analytics, 'road_clicked', { road: feature.properties.St_Full });
+                        openRoadModal(roadId, feature.properties.St_Full || "Rhode Island Road");
                     });
                 }
             }).addTo(map);
 
+            // Sync with Firebase
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
+                    const data = change.doc.data();
+                    roadLiveStats[roadId] = data;
+                    
                     const layerGroup = roadLayers[roadId];
                     if (layerGroup) {
                         const layer = Object.values(layerGroup._layers)[0];
                         if (change.type === "removed") {
                             layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
                         } else {
-                            const status = change.doc.data().status;
-                            let color = status === 'plowed' ? '#10b981' : (status === 'community' ? '#f59e0b' : '#ef4444');
-                            layer.setStyle({ color: color, weight: 6, opacity: 1 });
+                            const colors = { plowed: '#10b981', community: '#f59e0b', not_plowed: '#ef4444' };
+                            layer.setStyle({ color: colors[data.status] || '#334155', weight: 6, opacity: 1 });
                         }
                     }
                 });
-                debug.innerText = "Status: System Online";
+                debug.innerText = "Status: Live Tracking Active";
                 debug.style.color = "#10b981";
             });
         });
@@ -202,16 +237,30 @@
         if (!activeRoadId) return;
         const roadRef = doc(db, "roads", activeRoadId);
         try {
-            if (status === 'unknown') await deleteDoc(roadRef);
-            else await setDoc(roadRef, { status, updated: Date.now() }, { merge: true });
-            logEvent(analytics, 'status_update', { type: status });
-        } catch (e) {}
+            if (status === 'unknown') {
+                await deleteDoc(roadRef);
+            } else {
+                await setDoc(roadRef, { 
+                    status, 
+                    updated: serverTimestamp() 
+                }, { merge: true });
+            }
+        } catch (e) { console.error(e); }
         closeStatusModal();
     };
 
     window.closeStatusModal = () => {
         document.getElementById('status-modal').style.display = 'none';
         activeRoadId = null;
+    };
+
+    window.shareSite = async () => {
+        if (navigator.share) {
+            try { await navigator.share({ title: 'RI Plow Watch', url: window.location.href }); } catch (err) {}
+        } else {
+            navigator.clipboard.writeText(window.location.href);
+            alert("Link copied!");
+        }
     };
 </script>
 </body>
