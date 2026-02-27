@@ -41,10 +41,11 @@
         
         .btn-green { background: #10b981; }
         .btn-orange { background: #f59e0b; }
+        .btn-purple { background: #8b5cf6; } /* New Color */
         .btn-red { background: #ef4444; }
         .btn-gray { background: #64748b; }
         .btn-location { background: #3b82f6; margin-top: 10px; }
-        .btn-share { background: #8b5cf6; margin-top: 5px; } 
+        .btn-share { background: #475569; margin-top: 5px; } 
         
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
         .road-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
@@ -76,6 +77,7 @@
     <div style="font-size: 13px; line-height: 1.6;">
         <div><span class="dot" style="background:#10b981"></span>Plowed</div>
         <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
+        <div><span class="dot" style="background:#8b5cf6"></span>Needs Widening</div>
         <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
         <div><span class="dot" style="background:#334155"></span>Unknown</div>
     </div>
@@ -91,6 +93,7 @@
         
         <button class="action-btn btn-green" onclick="updateStatus('plowed')">Plowed (City)</button>
         <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
+        <button class="action-btn btn-purple" onclick="updateStatus('widening')">Needs Widening</button>
         <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
         <button class="action-btn btn-gray" onclick="updateStatus('unknown')">Reset to Unknown</button>
         <button onclick="closeStatusModal()" style="background:none; border:none; color:#94a3b8; cursor:pointer; margin-top:10px;">Cancel</button>
@@ -104,7 +107,7 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-    import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWDc6CnSnDUkUFROTbWP196RJ5i1ZNqmw",
@@ -122,7 +125,7 @@
     
     let activeRoadId = null;
     let roadLayers = {}; 
-    let roadLiveStats = {}; // Stores latest status and time for each road
+    let roadLiveStats = {};
 
     const map = L.map('map', { zoomControl: false }).setView([41.82, -71.41], 12);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -131,7 +134,6 @@
 
     window.closeWelcome = () => document.getElementById('welcome-modal').style.display = 'none';
 
-    // Helper: Format Timestamp to "X mins ago"
     function timeSince(date) {
         if (!date) return "";
         const seconds = Math.floor((new Date() - date) / 1000);
@@ -142,7 +144,6 @@
         return "Just now";
     }
 
-    // Find Me & Auto-Select Road
     window.findMe = () => {
         const btn = document.getElementById('find-btn');
         btn.innerText = "🔍 Locating...";
@@ -157,23 +158,33 @@
         let closestId = null;
         let closestName = "";
 
-        for (const id in roadLayers) {
-            const layerGroup = roadLayers[id];
-            const layer = Object.values(layerGroup._layers)[0];
-            const dist = e.latlng.distanceTo(layer.getBounds().getCenter());
-            if (dist < minDistance) {
-                minDistance = dist;
-                closestId = id;
-                closestName = layer.feature.properties.St_Full || "Rhode Island Road";
-            }
-        }
+        // Ensure roads are loaded before searching
+        const roadIds = Object.keys(roadLayers);
+        if (roadIds.length === 0) return;
 
-        if (closestId && minDistance < 150) {
+        roadIds.forEach(id => {
+            const layerGroup = roadLayers[id];
+            const layers = Object.values(layerGroup._layers);
+            if (layers.length > 0) {
+                const layer = layers[0];
+                const center = layer.getBounds().getCenter();
+                const dist = e.latlng.distanceTo(center);
+                
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestId = id;
+                    closestName = layer.feature.properties.St_Full || "Rhode Island Road";
+                }
+            }
+        });
+
+        // Use a 300m buffer to account for GPS inaccuracy
+        if (closestId && minDistance < 300) {
             openRoadModal(closestId, closestName);
         }
     });
 
-    function openRoadModal(id, name) {
+    window.openRoadModal = (id, name) => {
         activeRoadId = id;
         document.getElementById('modal-road-name').innerText = name;
         
@@ -186,9 +197,8 @@
         }
         
         document.getElementById('status-modal').style.display = 'block';
-    }
+    };
 
-    // Load Roads from GeoJSON
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
@@ -210,7 +220,6 @@
                 }
             }).addTo(map);
 
-            // Sync with Firebase
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
@@ -223,7 +232,13 @@
                         if (change.type === "removed") {
                             layer.setStyle({ color: "#334155", weight: 2.5, opacity: 0.5 });
                         } else {
-                            const colors = { plowed: '#10b981', community: '#f59e0b', not_plowed: '#ef4444' };
+                            // Colors map including the new widening status
+                            const colors = { 
+                                plowed: '#10b981', 
+                                community: '#f59e0b', 
+                                widening: '#8b5cf6', 
+                                not_plowed: '#ef4444' 
+                            };
                             layer.setStyle({ color: colors[data.status] || '#334155', weight: 6, opacity: 1 });
                         }
                     }
