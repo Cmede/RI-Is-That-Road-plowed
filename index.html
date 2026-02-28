@@ -8,42 +8,30 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; background: #0f1218; overflow: hidden; font-family: sans-serif; }
         #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; height: 100vh !important; width: 100vw !important; z-index: 1; }
-        button, .glass-panel, #map { touch-action: manipulation; }
         
-        /* New Top Nav */
-        #top-nav {
-            position: absolute; top: 0; left: 0; right: 0; height: 50px;
-            background: rgba(15, 18, 24, 0.95); z-index: 2000;
-            display: flex; align-items: center; justify-content: space-around;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .nav-link { color: #94a3b8; text-decoration: none; font-weight: bold; font-size: 14px; cursor: pointer; }
-        .nav-link.active { color: #60a5fa; }
-
         .glass-panel {
-            position: absolute; top: 70px; left: 20px; z-index: 1000;
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
             background: rgba(15, 18, 24, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px;
-            padding: 15px; color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); width: 220px;
+            padding: 15px; color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); width: 240px;
+            max-height: 85vh; overflow-y: auto;
         }
+
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.7); z-index: 3000; backdrop-filter: blur(4px);
+            background: rgba(0,0,0,0.8); z-index: 3000; backdrop-filter: blur(8px);
         }
         .modal-content {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; padding: 25px; border-radius: 20px;
-            border: 1px solid #334155; color: white; width: 300px; text-align: center;
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            border: 1px solid #334155; color: white; width: 320px; text-align: center;
         }
-        
-        /* Dashboard Styling */
-        .dash-panel { display: none; }
-        input, select { width: 100%; padding: 10px; margin: 10px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box;}
-        
-        .credit { font-size: 10px; color: #94a3b8; margin-top: 4px; opacity: 0.8; }
-        .instruction { font-size: 11px; color: #60a5fa; margin: 8px 0; font-style: italic; font-weight: bold; }
-        .last-update { font-size: 12px; color: #fbbf24; margin-bottom: 15px; display: block; }
+
+        input, select { 
+            width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; 
+            border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box;
+        }
+
         .action-btn {
             display: block; width: 100%; padding: 12px; margin: 8px 0;
             border: none; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; font-size: 14px;
@@ -55,110 +43,84 @@
         .btn-purple { background: #8b5cf6; }
         .btn-red { background: #ef4444; }
         .btn-gray { background: #64748b; }
-        .btn-location { background: #3b82f6; margin-top: 10px; }
-        .btn-share { background: #475569; margin-top: 5px; } 
+        .btn-blue { background: #3b82f6; }
+        .btn-outline { background: transparent; border: 1px solid #94a3b8; color: #94a3b8; }
+
+        .credit { font-size: 10px; color: #94a3b8; margin-top: 4px; }
+        .instruction { font-size: 11px; color: #60a5fa; margin: 8px 0; font-style: italic; }
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
-        .road-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-        ul.guide-list { text-align: left; font-size: 13px; line-height: 1.6; color: #cbd5e1; padding-left: 20px; }
-        
-        /* Draw Tool UI */
-        #draw-controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2000; display: none; gap: 10px; }
-        #sqft-label { position: absolute; top: 120px; right: 20px; z-index: 1000; background: #8b5cf6; padding: 8px; border-radius: 8px; color: white; font-weight: bold; display: none;}
     </style>
 </head>
 <body>
 
-<nav id="top-nav">
-    <div class="nav-link active" onclick="showTab('map-view')">🗺️ Main Map</div>
-    <div id="user-tab-link" class="nav-link" onclick="showTab('user-view')">🏠 My Portal</div>
-    <div id="login-nav" class="nav-link" onclick="handleLogin()">🔑 Login</div>
-</nav>
+<div id="auth-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h2 id="auth-title">Join Plow Watch</h2>
+        <input type="email" id="auth-email" placeholder="Email Address">
+        <input type="password" id="auth-password" placeholder="Password">
+        <div id="signup-only">
+            <select id="auth-role">
+                <option value="customer">Homeowner (Needs Plow)</option>
+                <option value="driver">Plow Driver (Has Equipment)</option>
+            </select>
+        </div>
+        <button class="action-btn btn-green" onclick="handleAuth()">Continue</button>
+        <button class="action-btn btn-outline" onclick="toggleAuthMode()" id="auth-toggle-text">Login instead</button>
+        <button onclick="closeAuthModal()" style="color:#94a3b8; background:none; border:none; margin-top:10px; cursor:pointer;">Cancel</button>
+    </div>
+</div>
 
 <div id="welcome-modal" class="modal-overlay" style="display: block;">
     <div class="modal-content">
         <h2 style="margin-top: 0; color: #60a5fa;">❄️ RI Plow Watch</h2>
         <p style="font-size: 14px; color: #94a3b8;">Help your neighbors navigate the storm!</p>
-        <ul class="guide-list">
-            <li><b>Find:</b> Use the blue button to snap to your street.</li>
-            <li><b>Report:</b> Mark if your road is cleared or buried.</li>
-            <li><b>Crowdsource:</b> See real-time updates from other drivers.</li>
-        </ul>
         <button class="action-btn btn-green" onclick="closeWelcome()">Start Reporting</button>
     </div>
 </div>
 
-<div id="role-modal" class="modal-overlay">
-    <div class="modal-content">
-        <h2 style="color: #60a5fa;">Account Type</h2>
-        <p>Are you a homeowner or a plower?</p>
-        <button class="action-btn btn-purple" onclick="setRole('house')">🏠 House (Homeowner)</button>
-        <button class="action-btn btn-orange" onclick="setRole('plower')">🚜 Plower (Service)</button>
+<div class="glass-panel">
+    <h3 style="margin:0; color: #60a5fa;">RI Plow Watch Pro</h3>
+    <div class="credit">Charles Medeiros | cmedeiros133@gmail.com</div>
+    
+    <div id="user-section" style="margin-top:15px;">
+        <button id="login-btn" class="action-btn btn-blue" onclick="openAuthModal()">🔑 Login / Sign Up</button>
+        <div id="logged-in-ui" style="display:none;">
+            <div id="user-welcome" style="color:#10b981; font-weight:bold; margin-bottom:5px;">Welcome!</div>
+            <div id="customer-tools" style="display:none;">
+                <button class="action-btn btn-purple" onclick="requestPlow()">❄️ Request Driveway Plow</button>
+            </div>
+            <button class="action-btn btn-outline" onclick="handleLogout()" style="font-size:10px; padding:5px;">Logout</button>
+        </div>
     </div>
-</div>
 
-<div id="draw-controls">
-    <button class="action-btn btn-orange" style="width: auto;" onclick="undoDraw()">Undo</button>
-    <button class="action-btn btn-red" style="width: auto;" onclick="resetDraw()">Redraw</button>
-    <button class="action-btn btn-green" style="width: auto;" onclick="saveDrawing()">Finish & Post</button>
-</div>
-<div id="sqft-label">0 sq ft</div>
-
-<div class="dash-panel" id="user-view" style="position: absolute; top: 50px; left: 0; right: 0; bottom: 0; background: #0f1218; z-index: 1500; padding: 20px; overflow-y: auto;">
-    <div id="house-section" style="display: none;">
-        <h2 style="color: #60a5fa;">Your Property</h2>
-        <button class="action-btn btn-purple" onclick="startMapping()">📍 Pin/Outline Driveway</button>
-        <p style="font-size: 12px; color: #94a3b8;">Outline your area to calculate size and request help.</p>
-        <input type="text" id="route-code" placeholder="Enter Driver Route Code (Optional)">
-        <button class="action-btn btn-green" onclick="submitToPublic()">Mark for Public Map</button>
+    <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
+    
+    <div class="instruction">📍 Tap a road to mark status</div>
+    <div id="debug-text" style="font-size: 11px; color: #fbbf24; margin: 8px 0;">Status: Connecting...</div>
+    
+    <div style="font-size: 13px; line-height: 1.6;">
+        <div><span class="dot" style="background:#10b981"></span>Plowed</div>
+        <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
+        <div><span class="dot" style="background:#8b5cf6"></span>Needs Widening</div>
+        <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
     </div>
     
-    <div id="plower-section" style="display: none;">
-        <h2 style="color: #60a5fa;">Business Info</h2>
-        <input type="text" id="biz-name" placeholder="Business Name">
-        <select id="biz-equip">
-            <option value="plows">Truck with Plows</option>
-            <option value="snowblowers">Snowblowers</option>
-            <option value="shovels">Shovels / Hand Crew</option>
-        </select>
-        <input type="number" id="biz-crews" placeholder="Number of Crews">
-        <button class="action-btn btn-green" onclick="savePlowerProfile()">Save Profile</button>
-        <hr style="border: 0; border-top: 1px solid #334155; margin: 20px 0;">
-        <h3>Open Jobs & Clients</h3>
-        <div id="plower-jobs-list" style="font-size: 14px; color: #94a3b8;">No jobs nearby.</div>
-    </div>
+    <button class="action-btn btn-blue" style="margin-top:10px;" onclick="findMe()">📍 Find My Street</button>
+    <button class="action-btn btn-gray" onclick="shareSite()">🔗 Share Map</button>
 </div>
 
-<div id="main-map-elements">
-    <div class="glass-panel">
-        <h3 style="margin:0; color: #60a5fa;">RI Plow Watch</h3>
-        <div class="credit">Created by Charles Medeiros CONTACT cmedeiros133@gmail.com</div>
-        <div class="instruction">📍 Tap a road to mark status</div>
-        <div id="debug-text" style="font-size: 11px; color: #fbbf24; margin: 8px 0;">Status: Connecting...</div>
-        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
-        <div style="font-size: 13px; line-height: 1.6;">
-            <div><span class="dot" style="background:#10b981"></span>Plowed</div>
-            <div><span class="dot" style="background:#f59e0b"></span>Community Cleared</div>
-            <div><span class="dot" style="background:#8b5cf6"></span>Needs Widening</div>
-            <div><span class="dot" style="background:#ef4444"></span>Not Plowed</div>
-            <div><span class="dot" style="background:#334155"></span>Unknown</div>
-        </div>
-        <button class="action-btn btn-location" id="find-btn" onclick="findMe()">📍 Find My Street</button>
-        <button class="action-btn btn-share" onclick="shareSite()">🔗 Share This Map</button>
-    </div>
-
-    <div id="status-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="road-label">Updating:</div>
-            <h3 id="modal-road-name" style="margin: 5px 0 5px 0; color: #60a5fa;">Road</h3>
-            <span id="modal-last-update" class="last-update"></span>
-            
-            <button class="action-btn btn-green" onclick="updateStatus('plowed')">Plowed (City)</button>
-            <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
-            <button class="action-btn btn-purple" onclick="updateStatus('widening')">Needs Widening</button>
-            <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
-            <button class="action-btn btn-gray" onclick="updateStatus('unknown')">Reset to Unknown</button>
-            <button onclick="closeStatusModal()" style="background:none; border:none; color:#94a3b8; cursor:pointer; margin-top:10px;">Cancel</button>
-        </div>
+<div id="status-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div style="font-size: 10px; color: #94a3b8; text-transform: uppercase;">Updating:</div>
+        <h3 id="modal-road-name" style="margin: 5px 0; color: #60a5fa;">Road</h3>
+        <span id="modal-last-update" style="font-size: 12px; color: #fbbf24; margin-bottom: 15px; display: block;"></span>
+        
+        <button class="action-btn btn-green" onclick="updateStatus('plowed')">Plowed (City)</button>
+        <button class="action-btn btn-orange" onclick="updateStatus('community')">Community Cleared</button>
+        <button class="action-btn btn-purple" onclick="updateStatus('widening')">Needs Widening</button>
+        <button class="action-btn btn-red" onclick="updateStatus('not_plowed')">Not Plowed</button>
+        <button class="action-btn btn-gray" onclick="updateStatus('unknown')">Reset to Unknown</button>
+        <button onclick="closeStatusModal()" style="background:none; border:none; color:#94a3b8; cursor:pointer; margin-top:10px;">Cancel</button>
     </div>
 </div>
 
@@ -168,8 +130,8 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDoc, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
 
     const firebaseConfig = {
@@ -178,153 +140,85 @@
         projectId: "ri-snow-mpa",
         storageBucket: "ri-snow-mpa.firebasestorage.app",
         messagingSenderId: "372597950937",
-        appId: "1:372597950937:web:52b0651133e2e7256571c8",
-        measurementId: "G-XXXXXXXXXX"
+        appId: "1:372597950937:web:52b0651133e2e7256571c8"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
     const analytics = getAnalytics(app);
-    const provider = new GoogleAuthProvider();
     const debug = document.getElementById('debug-text');
-    
+
     let activeRoadId = null;
     let roadLayers = {}; 
     let roadLiveStats = {};
-    let currentUser = null;
-    let userData = null;
-
-    // Drawing Vars
-    let isDrawing = false;
-    let drawPoints = [];
-    let drawLayer = L.polygon([], {color: '#8b5cf6', weight: 4}).addTo(map);
+    let isSignUpMode = true;
 
     const map = L.map('map', { zoomControl: false }).setView([41.82, -71.41], 12);
-    const roadBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19, attribution: '&copy; CartoDB'
     }).addTo(map);
-    const satelliteBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19
-    });
 
-    // --- Tab Management ---
-    window.showTab = (tabId) => {
-        document.querySelectorAll('.dash-panel').forEach(p => p.style.display = 'none');
-        document.getElementById('main-map-elements').style.display = (tabId === 'map-view') ? 'block' : 'none';
-        if (tabId === 'user-view') {
-            if (!currentUser) { handleLogin(); return; }
-            document.getElementById('user-view').style.display = 'block';
-        }
+    // --- AUTH LOGIC ---
+    window.openAuthModal = () => document.getElementById('auth-modal').style.display = 'block';
+    window.closeAuthModal = () => document.getElementById('auth-modal').style.display = 'none';
+    window.toggleAuthMode = () => {
+        isSignUpMode = !isSignUpMode;
+        document.getElementById('auth-title').innerText = isSignUpMode ? "Join Plow Watch" : "Welcome Back";
+        document.getElementById('signup-only').style.display = isSignUpMode ? "block" : "none";
+        document.getElementById('auth-toggle-text').innerText = isSignUpMode ? "Login instead" : "Need an account? Sign Up";
     };
 
-    // --- Google Login & Auth ---
-    window.handleLogin = async () => {
+    window.handleAuth = async () => {
+        const email = document.getElementById('auth-email').value;
+        const password = document.getElementById('auth-password').value;
+        const role = document.getElementById('auth-role').value;
         try {
-            const result = await signInWithPopup(auth, provider);
-            currentUser = result.user;
-            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-            if (!userDoc.exists()) {
-                document.getElementById('role-modal').style.display = 'block';
+            if (isSignUpMode) {
+                const cred = await createUserWithEmailAndPassword(auth, email, password);
+                await setDoc(doc(db, "users", cred.user.uid), { email, role, createdAt: serverTimestamp() });
             } else {
-                userData = userDoc.data();
-                setupDashboard();
+                await signInWithEmailAndPassword(auth, email, password);
             }
-        } catch (error) { console.error(error); }
+            closeAuthModal();
+        } catch (e) { alert(e.message); }
     };
 
-    window.setRole = async (role) => {
-        userData = { role, uid: currentUser.uid };
-        await setDoc(doc(db, "users", currentUser.uid), userData);
-        document.getElementById('role-modal').style.display = 'none';
-        setupDashboard();
-    };
+    window.handleLogout = () => signOut(auth);
 
-    function setupDashboard() {
-        document.getElementById('login-nav').innerText = currentUser.displayName;
-        document.getElementById('house-section').style.display = userData.role === 'house' ? 'block' : 'none';
-        document.getElementById('plower-section').style.display = userData.role === 'plower' ? 'block' : 'none';
-        if(userData.role === 'house') document.getElementById('user-tab-link').innerText = "🏠 My House";
-        else document.getElementById('user-tab-link').innerText = "🚜 Plower Dash";
-    }
-
-    // --- Drawing Logic (Satellite + SqFt) ---
-    window.startMapping = () => {
-        showTab('map-view');
-        isDrawing = true;
-        drawPoints = [];
-        drawLayer.setLatLngs([]);
-        map.removeLayer(roadBase);
-        satelliteBase.addTo(map);
-        document.getElementById('draw-controls').style.display = 'flex';
-        document.getElementById('sqft-label').style.display = 'block';
-        map.locate({setView: true, maxZoom: 19});
-    };
-
-    map.on('click', (e) => {
-        if (!isDrawing) return;
-        drawPoints.push(e.latlng);
-        drawLayer.setLatLngs(drawPoints);
-        calculateSqFt();
+    onAuthStateChanged(auth, async (user) => {
+        const loggedInUI = document.getElementById('logged-in-ui');
+        const loginBtn = document.getElementById('login-btn');
+        if (user) {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            const role = userDoc.exists() ? userDoc.data().role : 'customer';
+            loginBtn.style.display = 'none';
+            loggedInUI.style.display = 'block';
+            document.getElementById('user-welcome').innerText = `👋 ${role.toUpperCase()}`;
+            document.getElementById('customer-tools').style.display = role === 'customer' ? 'block' : 'none';
+        } else {
+            loginBtn.style.display = 'block';
+            loggedInUI.style.display = 'none';
+        }
     });
 
-    function calculateSqFt() {
-        if (drawPoints.length < 3) return;
-        let area = L.GeometryUtil.geodesicArea(drawPoints);
-        // Convert sq meters to sq ft
-        let sqft = (area * 10.7639).toFixed(0);
-        document.getElementById('sqft-label').innerText = sqft + " sq ft";
-    }
-
-    window.undoDraw = () => { drawPoints.pop(); drawLayer.setLatLngs(drawPoints); calculateSqFt(); };
-    window.resetDraw = () => { drawPoints = []; drawLayer.setLatLngs([]); calculateSqFt(); };
-    window.saveDrawing = async () => {
-        isDrawing = false;
-        document.getElementById('draw-controls').style.display = 'none';
-        satelliteBase.remove();
-        roadBase.addTo(map);
-        // Save to Firebase logic here...
-        alert("Location and Outline Saved!");
-    };
-
-    // --- Plower Side Functions ---
-    window.savePlowProfile = async () => {
-        const bizData = {
-            name: document.getElementById('biz-name').value,
-            equip: document.getElementById('biz-equip').value,
-            crews: document.getElementById('biz-crews').value
-        };
-        await setDoc(doc(db, "users", currentUser.uid), bizData, {merge: true});
-        alert("Profile Updated!");
-    };
-
-    // --- ORIGINAL CODE LOGIC (UNCHANGED) ---
-
-    window.closeWelcome = () => {
-        document.getElementById('welcome-modal').style.display = 'none';
-        logEvent(analytics, 'welcome_closed');
-    };
-
-    window.findMe = () => {
-        logEvent(analytics, 'find_me_clicked');
-        const btn = document.getElementById('find-btn');
-        btn.innerText = "🔍 Locating...";
-        map.locate({setView: true, maxZoom: 17});
-    };
-
-    window.shareSite = async () => {
-        logEvent(analytics, 'share_clicked');
-        if (navigator.share) {
-            try { await navigator.share({ title: 'RI Plow Watch', url: window.location.href }); } catch (err) {}
-        } else {
-            navigator.clipboard.writeText(window.location.href);
-            alert("Link copied!");
-        }
+    // --- ROAD & JOB LOGIC ---
+    window.requestPlow = async () => {
+        const center = map.getCenter();
+        try {
+            await addDoc(collection(db, "jobs"), {
+                userId: auth.currentUser.uid,
+                lat: center.lat,
+                lng: center.lng,
+                status: 'pending',
+                timestamp: serverTimestamp()
+            });
+            alert("Plow request posted at your map center!");
+        } catch (e) { console.error(e); }
     };
 
     window.updateStatus = async (status) => {
         if (!activeRoadId) return;
-        logEvent(analytics, 'status_update', { road_id: activeRoadId, status_type: status });
         const roadRef = doc(db, "roads", activeRoadId);
         try {
             if (status === 'unknown') { await deleteDoc(roadRef); } 
@@ -333,6 +227,7 @@
         closeStatusModal();
     };
 
+    // Original time function
     function timeSince(date) {
         if (!date) return "";
         const seconds = Math.floor((new Date() - date) / 1000);
@@ -343,39 +238,22 @@
         return "Just now";
     }
 
-    map.on('locationfound', (e) => {
-        document.getElementById('find-btn').innerText = "📍 Find My Street";
-        L.circle(e.latlng, { radius: 15, color: '#3b82f6', fillOpacity: 0.5 }).addTo(map);
-        if(isDrawing) return; // Don't snap to road while drawing driveway
-        
-        let minDistance = Infinity;
-        let closestId = null;
-        let closestName = "";
-        const roadIds = Object.keys(roadLayers);
-        roadIds.forEach(id => {
-            const layerGroup = roadLayers[id];
-            const layers = Object.values(layerGroup._layers);
-            if (layers.length > 0) {
-                const layer = layers[0];
-                const center = layer.getBounds().getCenter();
-                const dist = e.latlng.distanceTo(center);
-                if (dist < minDistance) {
-                    minDistance = dist; closestId = id; closestName = layer.feature.properties.St_Full || "Road";
-                }
-            }
-        });
-        if (closestId && minDistance < 300) { openRoadModal(closestId, closestName); }
-    });
-
-    window.openRoadModal = (id, name) => {
-        activeRoadId = id;
-        document.getElementById('modal-road-name').innerText = name;
-        const stats = roadLiveStats[id];
-        const updateEl = document.getElementById('modal-last-update');
-        updateEl.innerText = (stats && stats.updated) ? `Last updated: ${timeSince(stats.updated.toDate())}` : "No recent reports";
-        document.getElementById('status-modal').style.display = 'block';
+    // --- MAP EVENTS ---
+    window.findMe = () => {
+        map.locate({setView: true, maxZoom: 17});
     };
 
+    map.on('locationfound', (e) => {
+        L.circle(e.latlng, { radius: 15, color: '#3b82f6', fillOpacity: 0.5 }).addTo(map);
+    });
+
+    window.closeWelcome = () => document.getElementById('welcome-modal').style.display = 'none';
+    window.closeStatusModal = () => {
+        document.getElementById('status-modal').style.display = 'none';
+        activeRoadId = null;
+    };
+
+    // Load GeoJSON Roads
     fetch('./ri-roads.json')
         .then(res => res.json())
         .then(data => {
@@ -383,20 +261,24 @@
                 style: () => ({ color: "transparent", weight: 45, opacity: 0 }),
                 onEachFeature: (feature, layer) => {
                     const roadId = String(feature.properties.OBJECTID);
-                    const roadName = feature.properties.St_Full || "Road";
+                    const roadName = feature.properties.St_Full || "Rhode Island Road";
                     const visibleLine = L.geoJSON(feature, {
                         style: { color: "#334155", weight: 3, opacity: 0.6, lineCap: 'round' },
                         interactive: false
                     }).addTo(map);
                     roadLayers[roadId] = visibleLine;
-                    visibleLine.feature = feature;
                     layer.on('click', (e) => {
                         L.DomEvent.stopPropagation(e);
-                        openRoadModal(roadId, roadName);
+                        activeRoadId = roadId;
+                        document.getElementById('modal-road-name').innerText = roadName;
+                        const stats = roadLiveStats[roadId];
+                        document.getElementById('modal-last-update').innerText = (stats && stats.updated) ? `Last: ${timeSince(stats.updated.toDate())}` : "No reports";
+                        document.getElementById('status-modal').style.display = 'block';
                     });
                 }
             }).addTo(map);
 
+            // Sync Road Status
             onSnapshot(collection(db, "roads"), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const roadId = change.doc.id;
@@ -416,10 +298,26 @@
                 debug.innerText = "Status: Live Tracking Active";
                 debug.style.color = "#10b981";
             });
+
+            // Sync Job Markers
+            onSnapshot(collection(db, "jobs"), (snapshot) => {
+                snapshot.docChanges().forEach(change => {
+                    if (change.type === "added") {
+                        const data = change.doc.data();
+                        L.marker([data.lat, data.lng]).addTo(map).bindPopup("Driveway Plow Request");
+                    }
+                });
+            });
         });
 
-    window.closeStatusModal = () => { document.getElementById('status-modal').style.display = 'none'; activeRoadId = null; };
+    window.shareSite = async () => {
+        if (navigator.share) {
+            try { await navigator.share({ title: 'RI Plow Watch', url: window.location.href }); } catch (err) {}
+        } else {
+            navigator.clipboard.writeText(window.location.href);
+            alert("Link copied!");
+        }
+    };
 </script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-geometryutil@0.1.7/src/leaflet.geometryutil.min.js"></script>
 </body>
 </html>
